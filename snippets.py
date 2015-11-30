@@ -6,21 +6,24 @@ import argparse
 import sys
 import os
 
+logging.debug("Connecting to PostgreSQL")
+connection = psycopg2.connect(database="snippets")
+logging.debug("Database connection established.")
 
-def connect_to_db():
-    logging.debug("Connecting to PostgreSQL")
-    connection = psycopg2.connect(database="snippets")
-    logging.debug("Database connection established.")
 
 
 def put(name, snippet):
 
-    logging.info("Storing snippet {!r}: {!r}".format(name, snippet))
+    logging.info(("Storing snippet {!r}: {!r}").format(name, snippet))
     
     cursor = connection.cursor()
-    command = "insert into snippets values (%s, %s)"
-    cursor.execute(command, (name, snippet))
-    connection.commit()
+    try:
+        command = "insert into snippets values (%s, %s)"
+        cursor.execute(command, (name, snippet))
+    except psycopg2.IntegrityError as e:
+        connection.rollback()
+        command = "update snippets set message=%s where keyword=%s"
+        cursor.execute(command, (snippet, name))
     logging.debug("Snippet stored successfully.")   
     return name, snippet
     
@@ -33,8 +36,23 @@ def get(name):
 
     Returns the snippet.
     """
-    logging.error("FIXME: Unimplemented - get({!r})".format(name))
-    return ""
+    # cursor = connection.cursor()
+    # command = "select message from snippets where keyword='%s'"%name
+    # cursor.execute(command)
+    # connection.commit()
+    # message_tuple=cursor.fetchone()
+    
+    with connection, connection.cursor() as cursor:
+        cursor.execute("select message from snippets where keyword=%s", (name,))
+        row = cursor.fetchone()
+        
+        if len(row)>0:
+            logging.debug("Get Snippet successfully.")
+            return row[0]
+        else:
+            logging.debug("No Snippet got")
+            return ""
+    
     
     
     
@@ -49,9 +67,12 @@ def main():
     # Subparser for the put command
     logging.debug("Constructing put subparser")
     put_parser = subparsers.add_parser("put", help="Store a snippet")
-    get_paser=subparsers.add_parser("get",help="Retrieve a snippet")
+
     put_parser.add_argument("name", help="The name of the snippet")
     put_parser.add_argument("snippet", help="The snippet text")
+    
+    logging.debug("Constructing get subparser")
+    get_paser=subparsers.add_parser("get",help="Retrieve a snippet")
     get_paser.add_argument("name",help="The name of the snippet")
 
     arguments = parser.parse_args(sys.argv[1:])
@@ -60,10 +81,11 @@ def main():
     command=arguments.pop("command")
     if command=="put":
         name,snippet=put(**arguments)
-        print "Stored {!r} as {!r}".format(snippet,name)
+        print 
+        print ("Stored {!r} as {!r}".format(snippet,name))
     elif command=="get":
         snippet=get(**arguments)
-        print "Retrieve snippet: {!r}".format(snippet)
+        print ("Retrieve snippet: {!r}".format(snippet))
 
 if __name__ == '__main__':
     main()
